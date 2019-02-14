@@ -1,4 +1,4 @@
-class ZCL_TEST_NOTIF definition
+class ZCL_JSON definition
   public
   final
   create public .
@@ -44,7 +44,7 @@ ENDCLASS.
 
 
 
-CLASS ZCL_TEST_NOTIF IMPLEMENTATION.
+CLASS ZCL_JSON IMPLEMENTATION.
 
 
 * <SIGNATURE>---------------------------------------------------------------------------------------+
