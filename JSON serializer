@@ -1,0 +1,418 @@
+class ZCL_TEST_NOTIF definition
+  public
+  final
+  create public .
+
+public section.
+
+  constants C_OBJ_OPEN type C value `{` ##NO_TEXT.
+  constants C_OBJ_CLOSE type C value `}` ##NO_TEXT.
+  constants C_TABLE_OPEN type C value `[` ##NO_TEXT.
+  constants C_TABLE_CLOSE type C value `]` ##NO_TEXT.
+  constants C_QUOTE type C value `'` ##NO_TEXT.
+  constants C_COMMA type C value `,` ##NO_TEXT.
+  constants C_EQ type C value `:` ##NO_TEXT.
+
+  class-methods CONVERT_TABLE2JSON
+    importing
+      !IT_TABLE type STANDARD TABLE
+    returning
+      value(RW_JSON) type STRING .
+  class-methods CONVERT_JSON2TABLE
+    importing
+      !IV_JSON type STRING
+    exporting
+      !ET_TABLE type STANDARD TABLE .
+  class-methods CONVERT_STRUCT2JSON
+    importing
+      !IWA_STRUCT type ANY
+      !IO_STRUCT_DESCR type ref to CL_ABAP_STRUCTDESCR optional
+    returning
+      value(RW_JSON) type STRING .
+  class-methods TEST_STRUCT2JSON .
+  class-methods FORMAT_JSON
+    changing
+      !CV_JSON type STRING .
+  class-methods CONVERT_JSON2STRUCT
+    importing
+      !IV_JSON type STRING
+    exporting
+      !EWA_STRUCT type ANY .
+protected section.
+private section.
+ENDCLASS.
+
+
+
+CLASS ZCL_TEST_NOTIF IMPLEMENTATION.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>CONVERT_JSON2STRUCT
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_JSON                        TYPE        STRING
+* | [<---] EWA_STRUCT                     TYPE        ANY
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD convert_json2struct.
+
+
+* Local data declaration
+*---------------------------
+    DATA : lw_char TYPE i.
+    DATA : lw_level TYPE i.
+
+    DATA : lw_key TYPE string.
+    DATA : lw_value TYPE string.
+
+
+    FIELD-SYMBOLS <fs> TYPE any.
+
+    DATA : lw_quote_opened TYPE c.
+    DATA : lw_table_level TYPE i.
+    DATA : lw_json_table TYPE string.
+
+
+    DATA : lw_from_table TYPE i.
+    DATA : lw_to_table TYPE i.
+    DATA : lw_length_table TYPE i.
+
+    DATA : lw_from_obj TYPE i.
+    DATA : lw_to_obj TYPE i.
+    DATA : lw_length_obj TYPE i.
+
+* Processing
+*-------------
+    while  lw_char < strlen( iv_json ).
+      IF lw_table_level >= 1.
+
+        CASE iv_json+lw_char(1).
+          WHEN c_table_open.
+            ADD 1 TO lw_table_level.
+          WHEN c_table_close.
+            SUBTRACT 1 FROM lw_table_level.
+
+            IF lw_table_level EQ 0.
+              lw_to_table = lw_char + 1.
+            ENDIF.
+        ENDCASE.
+
+        IF lw_table_level IS INITIAL.
+          lw_length_table = lw_to_table - lw_from_table.
+          lw_json_table = iv_json+lw_from_table(lw_length_table).
+          convert_json2table(
+            EXPORTING
+              iv_json  = lw_json_table
+            IMPORTING
+              et_table = <fs> ).
+        ENDIF.
+      ELSE.
+
+        CASE iv_json+lw_char(1).
+          WHEN c_obj_open.
+            ADD 1 TO lw_level.
+            IF lw_level EQ 1.
+              lw_from_obj = lw_char + 1.
+            ENDIF.
+          WHEN c_table_open.
+            ADD 1 TO lw_table_level.
+            IF lw_table_level EQ 1.
+              lw_from_table = lw_char.
+            ENDIF.
+          WHEN c_quote  .
+            lw_quote_opened = boolc( lw_quote_opened <> abap_true ).
+            IF lw_quote_opened EQ abap_true.
+              lw_from_obj = lw_char + 1.
+            ELSE.
+              lw_to_obj = lw_char.
+              lw_length_obj = lw_to_obj - lw_from_obj.
+              lw_value = iv_json+lw_from_obj(lw_length_obj).
+              <fs> = lw_value.
+              CLEAR : lw_value, lw_key, lw_from_obj, lw_to_obj.
+              UNASSIGN <fs>.
+            ENDIF.
+          WHEN   cl_abap_char_utilities=>newline OR cl_abap_char_utilities=>horizontal_tab .
+            IF lw_from_obj IS NOT INITIAL.
+              lw_from_obj = lw_from_obj + 1.
+            ENDIF.
+
+          WHEN c_comma  .
+            IF lw_quote_opened IS INITIAL AND lw_level EQ 1.
+              lw_from_obj = lw_char + 1.
+            ENDIF.
+          WHEN   c_eq.
+
+            lw_to_obj = lw_char.
+            lw_length_obj = lw_to_obj - lw_from_obj.
+            lw_key = iv_json+lw_from_obj(lw_length_obj).
+            IF lw_level EQ 1.
+              ASSIGN COMPONENT lw_key OF STRUCTURE ewa_struct TO <fs>.
+              CLEAR :  lw_from_obj, lw_to_obj.
+            ENDIF.
+
+        ENDCASE.
+
+      ENDIF.
+      lw_char = lw_char + 1.
+    endwhile.
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>CONVERT_JSON2TABLE
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IV_JSON                        TYPE        STRING
+* | [<---] ET_TABLE                       TYPE        STANDARD TABLE
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD convert_json2table.
+
+
+* Local data declaration
+*---------------------------
+    DATA : lw_char TYPE i.
+    DATA : lw_level TYPE i.
+
+    FIELD-SYMBOLS <fs_struct> TYPE any.
+
+    DATA : lw_json_struct TYPE string.
+    DATA : lw_from TYPE i.
+    DATA : lw_to TYPE i.
+    DATA : lw_length TYPE i.
+
+* Processing
+*-------------
+    while lw_char < strlen( iv_json ) .
+      CASE iv_json+lw_char(1).
+        WHEN c_obj_open.
+          ADD 1 TO lw_level.
+          IF lw_level EQ 1.
+            lw_from = lw_char.
+          ENDIF.
+        WHEN c_obj_close.
+          SUBTRACT 1 FROM lw_level.
+          IF lw_level EQ 0.
+            lw_to = lw_char + 1.
+            lw_length = lw_to - lw_from.
+            lw_json_struct = iv_json+lw_from(lw_length) .
+
+            APPEND INITIAL LINE TO et_table  .
+            ASSIGN et_table[ lines( et_table ) ] TO <fs_struct>.
+
+            convert_json2struct(
+              EXPORTING
+                iv_json  = lw_json_struct
+              IMPORTING
+                ewa_struct = <fs_struct> ).
+          ENDIF.
+
+      ENDCASE.
+
+      lw_char = lw_char + 1.
+    endwhile.
+
+
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>CONVERT_STRUCT2JSON
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IWA_STRUCT                     TYPE        ANY
+* | [--->] IO_STRUCT_DESCR                TYPE REF TO CL_ABAP_STRUCTDESCR(optional)
+* | [<-()] RW_JSON                        TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD convert_struct2json.
+
+* Local data declaration
+*---------------------------
+    DATA : lo_struct_descr TYPE REF TO cl_abap_structdescr.
+    DATA : lw_json TYPE string.
+    DATA : lw_json_table TYPE string.
+    FIELD-SYMBOLS <fs> TYPE any.
+
+* Processing
+*-------------
+    IF io_struct_descr IS INITIAL.
+      lo_struct_descr ?= cl_abap_structdescr=>describe_by_data( iwa_struct ).
+    ELSE.
+      lo_struct_descr = io_struct_descr.
+    ENDIF.
+
+    LOOP AT lo_struct_descr->components ASSIGNING FIELD-SYMBOL(<fs_struct_descr>).
+      IF lw_json IS INITIAL.
+        lw_json = |{ c_obj_open }|.
+      ELSE.
+        lw_json = |{ lw_json }{ c_comma }|.
+      ENDIF.
+
+      UNASSIGN <fs>.
+      ASSIGN COMPONENT <fs_struct_descr>-name OF STRUCTURE iwa_struct TO <fs>.
+      IF <fs> IS NOT ASSIGNED.
+        CONTINUE.
+      ENDIF.
+
+      CASE <fs_struct_descr>-type_kind.
+        WHEN  `g` or 'C' or 'N' or 'P' or 'D' or 's'.
+          lw_json = |{ lw_json }{ <fs_struct_descr>-name } { c_eq } { c_quote }{ <fs> }{ c_quote }|.
+        WHEN  `h`.
+          lw_json_table = convert_table2json( <fs> ).
+          lw_json = |{ lw_json }{ <fs_struct_descr>-name } { c_eq } { lw_json_table }|.
+          when others.
+            BREAK-POINT.
+      ENDCASE.
+    ENDLOOP.
+
+
+    lw_json = |{ lw_json }{ c_obj_close }|.
+
+    rw_json = lw_json.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>CONVERT_TABLE2JSON
+* +-------------------------------------------------------------------------------------------------+
+* | [--->] IT_TABLE                       TYPE        STANDARD TABLE
+* | [<-()] RW_JSON                        TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD convert_table2json.
+* Local data declaration
+*---------------------------
+    DATA : lw_json TYPE string.
+    DATA : lw_json_struct TYPE string.
+    FIELD-SYMBOLS : <fs_struct> TYPE any.
+    DATA : lo_struct_descr TYPE REF TO cl_abap_structdescr.
+
+* Processing
+*-------------
+    LOOP AT it_table ASSIGNING <fs_struct>.
+      IF lo_struct_descr IS INITIAL.
+        lo_struct_descr ?= cl_abap_structdescr=>describe_by_data( <fs_struct> ).
+      ENDIF.
+      IF lw_json IS INITIAL.
+        lw_json = |{ c_table_open }|.
+      ELSE.
+        lw_json = |{ lw_json }{ c_comma }|.
+      ENDIF.
+      lw_json_struct = convert_struct2json( iwa_struct = <fs_struct> io_struct_descr = lo_struct_descr   ).
+      lw_json =  |{ lw_json }{ lw_json_struct }|.
+    ENDLOOP.
+
+    IF lw_json IS INITIAL.
+      lw_json =    |{ c_table_open }{ c_table_close }|.
+    ELSE.
+      lw_json = |{ lw_json }{ c_table_close }|.
+    ENDIF.
+
+    rw_json = lw_json.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>FORMAT_JSON
+* +-------------------------------------------------------------------------------------------------+
+* | [<-->] CV_JSON                        TYPE        STRING
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD format_json.
+
+* Local data declaration
+*---------------------------
+    DATA : lw_length TYPE i.
+    DATA : lw_car TYPE i.
+    DATA : lw_car_next TYPE i.
+    DATA : lw_car_prec TYPE i.
+    DATA : lw_indent TYPE i.
+    DATA : lw_insert TYPE string.
+    CONSTANTS : c_indent TYPE string VALUE cl_abap_char_utilities=>horizontal_tab.
+
+* Processing
+*-------------
+
+    WHILE lw_car < strlen( cv_json ).
+      CLEAR : lw_insert, lw_car_next, lw_car_prec.
+      DO 1 TIMES.
+        CASE cv_json+lw_car(1).
+          WHEN  c_obj_open OR c_table_open OR c_comma.
+            lw_car_next = lw_car + 1.
+
+            IF cv_json+lw_car(1) <> c_comma.
+              lw_indent = lw_indent + 1.
+            ENDIF.
+
+            IF cv_json+lw_car_next(1) EQ c_table_close.
+              EXIT.
+            ENDIF.
+
+            lw_insert = cl_abap_char_utilities=>newline.
+            DO lw_indent TIMES.
+              lw_insert = |{ lw_insert }{ c_indent }|.
+            ENDDO.
+
+            cv_json = |{ cv_json(lw_car_next) }{ lw_insert }{ cv_json+lw_car_next }|.
+
+            lw_car = lw_car + 1 + lw_indent  .
+
+
+          WHEN  c_obj_close OR c_table_close.
+            lw_indent = lw_indent - 1.
+            lw_car_prec = lw_car - 1.
+
+
+            IF cv_json+lw_car_prec(1) EQ c_table_open.
+              EXIT.
+            ENDIF.
+
+
+            lw_insert = cl_abap_char_utilities=>newline.
+            DO lw_indent TIMES.
+              lw_insert = |{ lw_insert }{ c_indent }|.
+            ENDDO.
+
+            cv_json = |{ cv_json(lw_car) }{ lw_insert }{ cv_json+lw_car }|.
+
+            lw_car = lw_car + 1 + lw_indent .
+        ENDCASE.
+      ENDDO.
+      lw_car = lw_car + 1.
+    ENDWHILE.
+  ENDMETHOD.
+
+
+* <SIGNATURE>---------------------------------------------------------------------------------------+
+* | Static Public Method ZCL_TEST_NOTIF=>TEST_STRUCT2JSON
+* +-------------------------------------------------------------------------------------------------+
+* +--------------------------------------------------------------------------------------</SIGNATURE>
+  METHOD test_struct2json.
+
+    TYPES : BEGIN OF ty_test,
+              a TYPE string,
+*              b TYPE string_table,
+              c TYPE TABLE OF tvarvc WITH DEFAULT KEY,
+              d TYPE string,
+            END OF ty_test.
+    DATA : ls_test TYPE ty_test.
+    DATA : lw_json TYPE string.
+
+    SELECT * UP TO 4 ROWS FROM tvarvc INTO TABLE ls_test-c.
+    ls_test-a = 'a coucou'.
+    ls_test-d = 'd coucou'.
+
+
+
+
+    lw_json =  convert_struct2json( ls_test ).
+    format_json(
+      CHANGING
+        cv_json =  lw_json
+    ).
+
+    clear ls_test.
+    convert_json2struct(
+      EXPORTING
+        iv_json    = lw_json
+      IMPORTING
+        ewa_struct = ls_test
+    ).
+  ENDMETHOD.
+ENDCLASS.
